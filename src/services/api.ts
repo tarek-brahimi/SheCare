@@ -56,6 +56,13 @@ function extractArrayFromPayload<T>(value: unknown, preferredKeys: string[] = []
       if (Array.isArray(candidate)) {
         return candidate as T[];
       }
+
+      if (isRecord(candidate)) {
+        const candidateValues = Object.values(candidate);
+        if (candidateValues.length > 0 && candidateValues.every((entry) => isRecord(entry))) {
+          return candidateValues as T[];
+        }
+      }
     }
 
     for (const nextValue of Object.values(current.node)) {
@@ -85,79 +92,6 @@ function extractObjectFromPayload<T extends Record<string, unknown>>(value: unkn
   }
 
   return null;
-}
-
-function toPostModel(value: unknown): Post | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const postId = typeof value.post_id === "string" ? value.post_id : typeof value.postId === "string" ? value.postId : "";
-  const authorId = typeof value.author_id === "string" ? value.author_id : typeof value.authorId === "string" ? value.authorId : "";
-
-  return {
-    post_id: postId,
-    title: typeof value.title === "string" ? value.title : undefined,
-    authorName: typeof value.authorName === "string" ? value.authorName : "Anonymous",
-    author_id: authorId,
-    content: typeof value.content === "string" ? value.content : "",
-    tags: Array.isArray(value.tags) ? value.tags.filter((tag): tag is string => typeof tag === "string") : [],
-    createdAt: typeof value.createdAt === "string" ? value.createdAt : new Date().toISOString(),
-    likes: typeof value.likes === "number" ? value.likes : 0,
-    comments: typeof value.comments === "number" ? value.comments : 0,
-    shares: typeof value.shares === "number" ? value.shares : 0,
-  };
-}
-
-function toSymptomModel(value: unknown): Symptom | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  return {
-    id: typeof value.id === "string" ? value.id : "",
-    name: typeof value.name === "string"
-      ? value.name
-      : typeof value.symptomName === "string"
-        ? value.symptomName
-        : "",
-    severity: typeof value.severity === "number" ? value.severity : 0,
-    date: typeof value.date === "string"
-      ? value.date
-      : typeof value.createdAt === "string"
-        ? value.createdAt
-        : new Date().toISOString(),
-  };
-}
-
-function toAppointmentModel(value: unknown): Appointment | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const rawType = typeof value.type === "string"
-    ? value.type
-    : typeof value.appointmentType === "string"
-      ? value.appointmentType
-      : "in-person";
-
-  return {
-    id: typeof value.id === "string" ? value.id : "",
-    user_id: typeof value.user_id === "string"
-      ? value.user_id
-      : typeof value.userId === "string"
-        ? value.userId
-        : "",
-    doctor: typeof value.doctor === "string"
-      ? value.doctor
-      : typeof value.doctorName === "string"
-        ? value.doctorName
-        : "",
-    specialty: typeof value.specialty === "string" ? value.specialty : "",
-    date: typeof value.date === "string" ? value.date : "",
-    time: typeof value.time === "string" ? value.time : "",
-    type: rawType === "teleconsultation" ? "teleconsultation" : "in-person",
-  };
 }
 
 function toMessage(value: unknown): string | null {
@@ -241,6 +175,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     cache: isGetRequest ? "no-store" : restOptions.cache,
     headers: {
       "Content-Type": "application/json",
+      "Accept": "application/json",
+      "ngrok-skip-browser-warning": "true",
       ...(isGetRequest ? { "Cache-Control": "no-cache", Pragma: "no-cache" } : {}),
       ...maybeAuthHeaders,
       ...headers,
@@ -266,9 +202,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 export async function getPosts() {
   const response = await request<unknown>(`${API_PREFIX}/posts`);
-  return extractArrayFromPayload<unknown>(response, ["posts"])
-    .map((item) => toPostModel(item))
-    .filter((item): item is Post => Boolean(item));
+  return extractArrayFromPayload<Post>(response, ["posts"]);
 }
 
 export type CreatePostPayload = {
@@ -327,7 +261,7 @@ export async function getUserStats() {
 
   for (const key of ["stats", "data", "result", "payload"]) {
     const candidate = response[key];
-    if (candidate !== undefined) {
+    if (candidate !== undefined && candidate !== null) {
       return candidate as unknown as Stat[];
     }
   }
@@ -346,9 +280,7 @@ export async function getCurrentUser() {
 
 export async function getSymptoms() {
   const response = await request<unknown>(`${API_PREFIX}/symptoms`);
-  return extractArrayFromPayload<unknown>(response, ["symptoms"])
-    .map((item) => toSymptomModel(item))
-    .filter((item): item is Symptom => Boolean(item));
+  return extractArrayFromPayload<Symptom>(response, ["symptoms"]);
 }
 
 export type CreateSymptomPayload = {
@@ -376,9 +308,7 @@ export async function createSymptom(payload: CreateSymptomPayload) {
 
 export async function getAppointments() {
   const response = await request<unknown>(`${API_PREFIX}/appointments`);
-  return extractArrayFromPayload<unknown>(response, ["appointments"])
-    .map((item) => toAppointmentModel(item))
-    .filter((item): item is Appointment => Boolean(item));
+  return extractArrayFromPayload<Appointment>(response, ["appointments"]);
 }
 
 export type CreateAppointmentPayload = Omit<Appointment, "id" | "user_id"> & {
