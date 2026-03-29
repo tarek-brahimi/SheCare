@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPost, getPosts } from "@/services/api";
+import { getApiErrorMessage } from "@/services/api";
+import { useAuth } from "@/context/useAuth";
 import { SheCard } from "@/ui/Card";
 import { SheTextArea } from "@/ui/TextArea";
 import { SheButton } from "@/ui/Button";
 import { FiHeart, FiMessageCircle, FiShare2 } from "react-icons/fi";
 import { timeAgo } from "@/utils/helpers";
-import { TAG_OPTIONS } from "@/utils/constants";
+import { MAX_POST_LENGTH, TAG_OPTIONS } from "@/utils/constants";
+import { toast } from "sonner";
 
 const tagColors: Record<string, string> = {
   Victory: "bg-shecare-green-light text-shecare-green",
@@ -17,12 +20,15 @@ const tagColors: Record<string, string> = {
 };
 
 export function CreatePostCard() {
+  const { user } = useAuth();
+  const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const queryClient = useQueryClient();
   const createPostMutation = useMutation({
     mutationFn: createPost,
     onSuccess: () => {
+      setTitle("");
       setContent("");
       setSelectedTags([]);
       queryClient.invalidateQueries({ queryKey: ["posts"] });
@@ -34,24 +40,56 @@ export function CreatePostCard() {
   };
 
   const handleSubmit = async () => {
-    if (!content.trim()) {
+    const trimmedTitle = title.trim();
+    const trimmedContent = content.trim();
+    if (!trimmedTitle || !trimmedContent) {
       return;
     }
 
-    await createPostMutation.mutateAsync({
-      content: content.trim(),
-      tags: selectedTags,
-    });
+    if (trimmedContent.length > MAX_POST_LENGTH) {
+      toast.error(`Post is too long. Max ${MAX_POST_LENGTH} characters.`);
+      return;
+    }
+
+    if (selectedTags.length === 0) {
+      toast.error("Please select at least one tag.");
+      return;
+    }
+
+    try {
+      await createPostMutation.mutateAsync({
+        id: crypto.randomUUID(),
+        title: trimmedTitle,
+        authorName: user?.name || "Anonymous",
+        authorAvatar: user?.avatar || (user?.name?.charAt(0).toUpperCase() || "A"),
+        content: trimmedContent,
+        tags: selectedTags,
+        createdAt: new Date().toISOString(),
+        likes: 0,
+        comments: 0,
+        shares: 0,
+      });
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not publish your post. Please try again."));
+    }
   };
 
   return (
     <SheCard>
       <h3 className="text-sm font-semibold text-foreground mb-3">Share Your Story</h3>
+      <input
+        type="text"
+        placeholder="Post title"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        className="w-full rounded-xl border border-input bg-card px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all mb-3"
+      />
       <SheTextArea
         rows={3}
         placeholder="How are you feeling today? Share your experience..."
         value={content}
         onChange={(e) => setContent(e.target.value)}
+        maxLength={MAX_POST_LENGTH}
       />
       <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
         <div className="flex gap-2 flex-wrap">
@@ -72,11 +110,12 @@ export function CreatePostCard() {
         <SheButton
           size="sm"
           onClick={handleSubmit}
-          disabled={!content.trim() || createPostMutation.isPending}
+          disabled={!title.trim() || !content.trim() || selectedTags.length === 0 || createPostMutation.isPending}
         >
           {createPostMutation.isPending ? "Posting..." : "Post"}
         </SheButton>
       </div>
+      <p className="text-xs text-muted-foreground mt-2">{content.length}/{MAX_POST_LENGTH} characters</p>
       {createPostMutation.isError && (
         <p className="text-xs text-destructive mt-2">Could not publish your post. Please try again.</p>
       )}
@@ -145,6 +184,7 @@ export function PostsFeed() {
               </div>
             </div>
           </div>
+          {post.title && <h3 className="text-sm font-semibold text-foreground mb-2">{post.title}</h3>}
           <p className="text-sm text-foreground leading-relaxed mb-4">{post.content}</p>
           <div className="flex items-center gap-6 text-muted-foreground">
             <button className="flex items-center gap-1.5 text-xs hover:text-primary transition-colors">
