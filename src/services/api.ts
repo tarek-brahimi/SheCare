@@ -1,6 +1,9 @@
 import type { Appointment, Post, Resource, Stat, Symptom, User } from "@/types/domain";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+const ACCESS_TOKEN_KEY = "shecare-access-token";
+
+let accessToken: string | null = localStorage.getItem(ACCESS_TOKEN_KEY);
 
 export class ApiError extends Error {
   readonly status: number;
@@ -15,7 +18,21 @@ export class ApiError extends Error {
 
 type RequestOptions = RequestInit & {
   params?: Record<string, string | number | boolean | undefined>;
+  skipAuth?: boolean;
 };
+
+export function getAccessToken() {
+  return accessToken;
+}
+
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+  if (token) {
+    localStorage.setItem(ACCESS_TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+  }
+}
 
 function withQueryParams(path: string, params?: RequestOptions["params"]) {
   if (!params) {
@@ -34,11 +51,13 @@ function withQueryParams(path: string, params?: RequestOptions["params"]) {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { headers, params, ...restOptions } = options;
+  const { headers, params, skipAuth, ...restOptions } = options;
+  const maybeAuthHeaders = !skipAuth && accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
   const response = await fetch(`${API_BASE_URL}${withQueryParams(path, params)}`, {
     ...restOptions,
     headers: {
       "Content-Type": "application/json",
+      ...maybeAuthHeaders,
       ...headers,
     },
   });
@@ -109,4 +128,39 @@ export async function createAppointment(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export interface AuthPayload {
+  email: string;
+  password: string;
+}
+
+export interface RegisterPayload extends AuthPayload {
+  name: string;
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  refreshToken?: string;
+  user: User;
+}
+
+export async function login(payload: AuthPayload) {
+  return request<AuthResponse>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    skipAuth: true,
+  });
+}
+
+export async function register(payload: RegisterPayload) {
+  return request<AuthResponse>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    skipAuth: true,
+  });
+}
+
+export async function getAuthMe() {
+  return request<User>("/api/auth/me");
 }
