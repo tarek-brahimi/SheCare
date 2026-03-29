@@ -48,6 +48,7 @@ export interface Symptom {
 
 export interface Appointment {
   id: string;
+  user_id: string;
   doctor: string;
   specialty: string;
   date: string;
