@@ -184,7 +184,7 @@ export async function getResources() {
   return [];
 }
 
-export async function getUserStats() {
+export async function getUserStats(userId: string) {
   return request<Stat[]>(`${API_PREFIX}/stats`);
 }
 
