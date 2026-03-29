@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createPost, getPosts } from "@/services/api";
+import { commentOnPost, createPost, getPosts, likePost, sharePost } from "@/services/api";
 import { getApiErrorMessage } from "@/services/api";
 import { useAuth } from "@/context/useAuth";
 import { SheCard } from "@/ui/Card";
 import { SheTextArea } from "@/ui/TextArea";
 import { SheButton } from "@/ui/Button";
+import { SheInput } from "@/ui/Input";
 import { FiHeart, FiMessageCircle, FiShare2 } from "react-icons/fi";
 import { timeAgo } from "@/utils/helpers";
 import { MAX_POST_LENGTH, TAG_OPTIONS } from "@/utils/constants";
@@ -58,10 +59,10 @@ export function CreatePostCard() {
 
     try {
       await createPostMutation.mutateAsync({
-        id: crypto.randomUUID(),
+        post_id: crypto.randomUUID(),
         title: trimmedTitle,
-        authorName: user?.name || "Anonymous",
-        authorAvatar: user?.avatar || (user?.name?.charAt(0).toUpperCase() || "A"),
+        authorName: user.name || "Anonymous",
+        author_id: user.id,
         content: trimmedContent,
         tags: selectedTags,
         createdAt: new Date().toISOString(),
@@ -125,6 +126,105 @@ export function CreatePostCard() {
 
 export function PostsFeed() {
   const { data: posts, isLoading, isError } = useQuery({ queryKey: ["posts"], queryFn: getPosts });
+  const queryClient = useQueryClient();
+  const [engagementByPost, setEngagementByPost] = useState<Record<string, { likes: number; shares: number; comments: number }>>({});
+  const [commentDraftByPost, setCommentDraftByPost] = useState<Record<string, string>>({});
+  const [commentsByPost, setCommentsByPost] = useState<Record<string, string[]>>({});
+
+  const likeMutation = useMutation({
+    mutationFn: likePost,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
+    },
+  });
+
+  const shareMutation = useMutation({
+    mutationFn: sharePost,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
+    },
+  });
+
+  const commentMutation = useMutation({
+    mutationFn: ({ postId, comment }: { postId: string; comment: string }) => commentOnPost(postId, comment),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
+    },
+  });
+
+  const getPostKey = (postId: string | undefined, authorId: string, createdAt: string, index: number) => (
+    postId || `${authorId}-${createdAt}-${index}`
+  );
+
+  const incrementMetric = (postKey: string, metric: "likes" | "shares" | "comments") => {
+    setEngagementByPost((prev) => {
+      const current = prev[postKey] || { likes: 0, shares: 0, comments: 0 };
+      return {
+        ...prev,
+        [postKey]: {
+          ...current,
+          [metric]: current[metric] + 1,
+        },
+      };
+    });
+  };
+
+  const handleLike = async (postId: string | undefined, postKey: string) => {
+    incrementMetric(postKey, "likes");
+
+    if (!postId) {
+      return;
+    }
+
+    try {
+      await likeMutation.mutateAsync(postId);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not persist like."));
+    }
+  };
+
+  const handleShare = async (postId: string | undefined, postKey: string) => {
+    incrementMetric(postKey, "shares");
+
+    if (!postId) {
+      return;
+    }
+
+    try {
+      await shareMutation.mutateAsync(postId);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not persist share."));
+    }
+  };
+
+  const addComment = async (postId: string | undefined, postKey: string) => {
+    const draft = commentDraftByPost[postKey]?.trim();
+    if (!draft) {
+      return;
+    }
+
+    setCommentsByPost((prev) => ({
+      ...prev,
+      [postKey]: [...(prev[postKey] || []), draft],
+    }));
+
+    setCommentDraftByPost((prev) => ({
+      ...prev,
+      [postKey]: "",
+    }));
+
+    incrementMetric(postKey, "comments");
+
+    if (!postId) {
+      return;
+    }
+
+    try {
+      await commentMutation.mutateAsync({ postId, comment: draft });
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not persist comment."));
+    }
+  };
 
   if (isLoading) {
     return (
@@ -164,20 +264,26 @@ export function PostsFeed() {
 
   return (
     <div className="space-y-4">
-      {posts.map((post) => (
-        <SheCard key={post.id}>
+      {posts.map((post, postIndex) => (
+        <SheCard key={getPostKey(post.post_id, post.author_id, post.createdAt, postIndex)}>
+          {(() => {
+            const postKey = getPostKey(post.post_id, post.author_id, post.createdAt, postIndex);
+            const engagement = engagementByPost[postKey] || { likes: 0, shares: 0, comments: 0 };
+            const commentDraft = commentDraftByPost[postKey] || "";
+            const postComments = commentsByPost[postKey] || [];
+
+            return (
+              <>
           <div className="flex items-start gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full shecare-gradient flex items-center justify-center text-primary-foreground font-bold text-sm shrink-0">
-              {post.authorAvatar}
-            </div>
+          
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-sm text-foreground">{post.authorName}</span>
                 <span className="text-xs text-muted-foreground">{timeAgo(post.createdAt)}</span>
               </div>
               <div className="flex gap-1.5 mt-1">
-                {post.tags.map((tag) => (
-                  <span key={tag} className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${tagColors[tag] || "bg-muted text-muted-foreground"}`}>
+                {post.tags.map((tag, tagIndex) => (
+                  <span key={`${postKey}-${tag}-${tagIndex}`} className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${tagColors[tag] || "bg-muted text-muted-foreground"}`}>
                     {tag}
                   </span>
                 ))}
@@ -187,16 +293,46 @@ export function PostsFeed() {
           {post.title && <h3 className="text-sm font-semibold text-foreground mb-2">{post.title}</h3>}
           <p className="text-sm text-foreground leading-relaxed mb-4">{post.content}</p>
           <div className="flex items-center gap-6 text-muted-foreground">
-            <button className="flex items-center gap-1.5 text-xs hover:text-primary transition-colors">
-              <FiHeart className="w-4 h-4" /> {post.likes}
+            <button
+              className="flex items-center gap-1.5 text-xs hover:text-primary transition-colors"
+              onClick={() => void handleLike(post.post_id, postKey)}
+              type="button"
+            >
+              <FiHeart className="w-4 h-4" /> {post.likes + engagement.likes}
             </button>
-            <button className="flex items-center gap-1.5 text-xs hover:text-shecare-blue transition-colors">
-              <FiMessageCircle className="w-4 h-4" /> {post.comments}
+            <button className="flex items-center gap-1.5 text-xs hover:text-shecare-blue transition-colors" type="button">
+              <FiMessageCircle className="w-4 h-4" /> {post.comments + engagement.comments}
             </button>
-            <button className="flex items-center gap-1.5 text-xs hover:text-shecare-green transition-colors">
-              <FiShare2 className="w-4 h-4" /> {post.shares}
+            <button
+              className="flex items-center gap-1.5 text-xs hover:text-shecare-green transition-colors"
+              onClick={() => void handleShare(post.post_id, postKey)}
+              type="button"
+            >
+              <FiShare2 className="w-4 h-4" /> {post.shares + engagement.shares}
             </button>
           </div>
+          <div className="mt-3 flex gap-2">
+            <SheInput
+              placeholder="Write a comment..."
+              value={commentDraft}
+              onChange={(e) => setCommentDraftByPost((prev) => ({ ...prev, [postKey]: e.target.value }))}
+            />
+            <SheButton size="sm" variant="outline" onClick={() => void addComment(post.post_id, postKey)} disabled={!commentDraft.trim()} type="button">
+              Comment
+            </SheButton>
+          </div>
+          {postComments.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {postComments.map((comment, commentIndex) => (
+                <p key={`${postKey}-comment-${commentIndex}`} className="text-sm text-foreground bg-muted/50 rounded-lg px-3 py-2">
+                  {comment}
+                </p>
+              ))}
+            </div>
+          )}
+              </>
+            );
+          })()}
         </SheCard>
       ))}
     </div>
