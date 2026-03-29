@@ -59,7 +59,6 @@ export function CreatePostCard() {
 
     try {
       await createPostMutation.mutateAsync({
-        post_id: crypto.randomUUID(),
         title: trimmedTitle,
         authorName: user.name || "Anonymous",
         author_id: user.id,
