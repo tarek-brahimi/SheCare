@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commentOnPost, createPost, getPosts, likePost, sharePost } from "@/services/api";
 import { getApiErrorMessage } from "@/services/api";
@@ -125,11 +125,46 @@ export function CreatePostCard() {
 }
 
 export function PostsFeed() {
+  const { user } = useAuth();
   const { data: posts, isLoading, isError } = useQuery({ queryKey: ["posts"], queryFn: getPosts });
   const queryClient = useQueryClient();
-  const [engagementByPost, setEngagementByPost] = useState<Record<string, { likes: number; shares: number; comments: number }>>({});
+  const [likedPostIds, setLikedPostIds] = useState<Record<string, true>>({});
   const [commentDraftByPost, setCommentDraftByPost] = useState<Record<string, string>>({});
   const [commentsByPost, setCommentsByPost] = useState<Record<string, string[]>>({});
+
+  const likedPostsStorageKey = user ? `shecare-liked-posts:${user.id}` : null;
+
+  useEffect(() => {
+    if (!likedPostsStorageKey) {
+      setLikedPostIds({});
+      return;
+    }
+
+    try {
+      const stored = localStorage.getItem(likedPostsStorageKey);
+      if (!stored) {
+        setLikedPostIds({});
+        return;
+      }
+
+      const parsed = JSON.parse(stored) as unknown;
+      if (!Array.isArray(parsed)) {
+        setLikedPostIds({});
+        return;
+      }
+
+      const map = parsed.reduce<Record<string, true>>((acc, postId) => {
+        if (typeof postId === "string" && postId.trim()) {
+          acc[postId] = true;
+        }
+        return acc;
+      }, {});
+
+      setLikedPostIds(map);
+    } catch {
+      setLikedPostIds({});
+    }
+  }, [likedPostsStorageKey]);
 
   const likeMutation = useMutation({
     mutationFn: likePost,
@@ -156,36 +191,32 @@ export function PostsFeed() {
     postId || `${authorId}-${createdAt}-${index}`
   );
 
-  const incrementMetric = (postKey: string, metric: "likes" | "shares" | "comments") => {
-    setEngagementByPost((prev) => {
-      const current = prev[postKey] || { likes: 0, shares: 0, comments: 0 };
-      return {
-        ...prev,
-        [postKey]: {
-          ...current,
-          [metric]: current[metric] + 1,
-        },
-      };
-    });
-  };
 
-  const handleLike = async (postId: string | undefined, postKey: string) => {
-    incrementMetric(postKey, "likes");
-
+  const handleLike = async (postId: string | undefined) => {
     if (!postId) {
+      return;
+    }
+
+    if (likedPostIds[postId]) {
+      toast.info("You can only like a post once.");
       return;
     }
 
     try {
       await likeMutation.mutateAsync(postId);
+      setLikedPostIds((prev) => {
+        const next = { ...prev, [postId]: true as const };
+        if (likedPostsStorageKey) {
+          localStorage.setItem(likedPostsStorageKey, JSON.stringify(Object.keys(next)));
+        }
+        return next;
+      });
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Could not persist like."));
     }
   };
 
-  const handleShare = async (postId: string | undefined, postKey: string) => {
-    incrementMetric(postKey, "shares");
-
+  const handleShare = async (postId: string | undefined) => {
     if (!postId) {
       return;
     }
@@ -212,8 +243,6 @@ export function PostsFeed() {
       ...prev,
       [postKey]: "",
     }));
-
-    incrementMetric(postKey, "comments");
 
     if (!postId) {
       return;
@@ -268,7 +297,7 @@ export function PostsFeed() {
         <SheCard key={getPostKey(post.post_id, post.author_id, post.createdAt, postIndex)}>
           {(() => {
             const postKey = getPostKey(post.post_id, post.author_id, post.createdAt, postIndex);
-            const engagement = engagementByPost[postKey] || { likes: 0, shares: 0, comments: 0 };
+            const isLikedByCurrentUser = Boolean(post.post_id && likedPostIds[post.post_id]);
             const commentDraft = commentDraftByPost[postKey] || "";
             const postComments = commentsByPost[postKey] || [];
 
@@ -294,21 +323,22 @@ export function PostsFeed() {
           <p className="text-sm text-foreground leading-relaxed mb-4">{post.content}</p>
           <div className="flex items-center gap-6 text-muted-foreground">
             <button
-              className="flex items-center gap-1.5 text-xs hover:text-primary transition-colors"
-              onClick={() => void handleLike(post.post_id, postKey)}
+              className={`flex items-center gap-1.5 text-xs transition-colors ${isLikedByCurrentUser ? "text-primary" : "hover:text-primary"}`}
+              onClick={() => void handleLike(post.post_id)}
+              disabled={isLikedByCurrentUser || likeMutation.isPending || !post.post_id}
               type="button"
             >
-              <FiHeart className="w-4 h-4" /> {post.likes + engagement.likes}
+              <FiHeart className="w-4 h-4" /> {post.likes}
             </button>
             <button className="flex items-center gap-1.5 text-xs hover:text-shecare-blue transition-colors" type="button">
-              <FiMessageCircle className="w-4 h-4" /> {post.comments + engagement.comments}
+              <FiMessageCircle className="w-4 h-4" /> {post.comments}
             </button>
             <button
               className="flex items-center gap-1.5 text-xs hover:text-shecare-green transition-colors"
-              onClick={() => void handleShare(post.post_id, postKey)}
+              onClick={() => void handleShare(post.post_id)}
               type="button"
             >
-              <FiShare2 className="w-4 h-4" /> {post.shares + engagement.shares}
+              <FiShare2 className="w-4 h-4" /> {post.shares}
             </button>
           </div>
           <div className="mt-3 flex gap-2">
