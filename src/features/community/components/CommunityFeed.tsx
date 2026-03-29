@@ -61,7 +61,7 @@ export function CreatePostCard() {
         id: crypto.randomUUID(),
         title: trimmedTitle,
         authorName: user?.name || "Anonymous",
-        authorAvatar: user?.avatar || (user?.name?.charAt(0).toUpperCase() || "A"),
+        
         content: trimmedContent,
         tags: selectedTags,
         createdAt: new Date().toISOString(),
@@ -168,7 +168,7 @@ export function PostsFeed() {
         <SheCard key={post.id}>
           <div className="flex items-start gap-3 mb-3">
             <div className="w-10 h-10 rounded-full shecare-gradient flex items-center justify-center text-primary-foreground font-bold text-sm shrink-0">
-              {post.authorAvatar}
+              {post.authorName?.charAt(0).toUpperCase() || "A"}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
