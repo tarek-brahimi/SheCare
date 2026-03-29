@@ -41,6 +41,16 @@ function extractArrayFromPayload<T>(value: unknown, preferredKeys: string[] = []
       continue;
     }
 
+    const mapEntries = Object.entries(current.node);
+    const mapKeysLookLikeIds = mapEntries.length > 0
+      && mapEntries.every(([key]) => /^\d+$/.test(key) || /^[a-f0-9-]{8,}$/i.test(key));
+    const mapValuesAreObjects = mapEntries.length > 0
+      && mapEntries.every(([, nodeValue]) => isRecord(nodeValue));
+
+    if (mapKeysLookLikeIds && mapValuesAreObjects) {
+      return Object.values(current.node) as T[];
+    }
+
     for (const key of candidateKeys) {
       const candidate = current.node[key];
       if (Array.isArray(candidate)) {
@@ -186,17 +196,9 @@ export async function getPosts() {
   return extractArrayFromPayload<Post>(response, ["posts"]);
 }
 
-export async function createPost(payload: {
-  title?: string;
-  authorName: string;
-  author_id: string;
-  content: string;
-  tags: string[];
-  createdAt: string;
-  likes: number;
-  comments: number;
-  shares: number;
-}) {
+export type CreatePostPayload = Omit<Post, "post_id"> & { post_id?: never };
+
+export async function createPost(payload: CreatePostPayload) {
   return request<Post>(`${API_PREFIX}/posts`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -229,7 +231,19 @@ export async function getResources() {
 
 export async function getUserStats() {
   const response = await request<unknown>(`${API_PREFIX}/stats`);
-  return extractArrayFromPayload<Stat>(response, ["stats"]);
+
+  if (!isRecord(response)) {
+    return response as unknown as Stat[];
+  }
+
+  for (const key of ["stats", "data", "result", "payload"]) {
+    const candidate = response[key];
+    if (candidate !== undefined) {
+      return candidate as unknown as Stat[];
+    }
+  }
+
+  return response as unknown as Stat[];
 }
 
 export async function getCurrentUser() {
@@ -246,7 +260,9 @@ export async function getSymptoms() {
   return extractArrayFromPayload<Symptom>(response, ["symptoms"]);
 }
 
-export async function createSymptom(payload: { name: string; severity: number; date?: string }) {
+export type CreateSymptomPayload = Omit<Symptom, "id" | "date"> & { date?: string; id?: never };
+
+export async function createSymptom(payload: CreateSymptomPayload) {
   return request<Symptom>(`${API_PREFIX}/symptoms`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -258,14 +274,9 @@ export async function getAppointments() {
   return extractArrayFromPayload<Appointment>(response, ["appointments"]);
 }
 
-export async function createAppointment(payload: {
-  user_id: string;
-  doctor: string;
-  specialty: string;
-  date: string;
-  time: string;
-  type: Appointment["type"];
-}) {
+export type CreateAppointmentPayload = Omit<Appointment, "id"> & { id?: never };
+
+export async function createAppointment(payload: CreateAppointmentPayload) {
   return request<Appointment>(`${API_PREFIX}/appointments`, {
     method: "POST",
     body: JSON.stringify(payload),
