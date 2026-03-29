@@ -21,7 +21,6 @@ const tagColors: Record<string, string> = {
 };
 
 export function CreatePostCard() {
-  const { user } = useAuth();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -60,14 +59,8 @@ export function CreatePostCard() {
     try {
       await createPostMutation.mutateAsync({
         title: trimmedTitle,
-        authorName: user?.name || "Anonymous",
-        author_id: user?.id,
         content: trimmedContent,
         tags: selectedTags,
-        createdAt: new Date().toISOString(),
-        likes: 0,
-        comments: 0,
-        shares: 0,
       });
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Could not publish your post. Please try again."));

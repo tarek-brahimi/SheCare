@@ -4,13 +4,11 @@ import { createAppointment, getAppointments } from "@/services/api";
 import { SheCard } from "@/ui/Card";
 import { SheButton } from "@/ui/Button";
 import { SheInput } from "@/ui/Input";
-import { useAuth } from "@/context/useAuth";
 import { FiCalendar, FiVideo, FiMapPin, FiPlus } from "react-icons/fi";
 import { formatDate } from "@/utils/helpers";
 import type { Appointment } from "@/types/domain";
 
 export function ConsultationPanel() {
-  const { user } = useAuth();
   const [doctor, setDoctor] = useState("");
   const [specialty, setSpecialty] = useState("");
   const [date, setDate] = useState("");
@@ -39,7 +37,6 @@ export function ConsultationPanel() {
     }
 
     await createAppointmentMutation.mutateAsync({
-      user_id: user.id,
       doctor: doctor.trim(),
       specialty: specialty.trim(),
       date,

@@ -87,6 +87,79 @@ function extractObjectFromPayload<T extends Record<string, unknown>>(value: unkn
   return null;
 }
 
+function toPostModel(value: unknown): Post | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const postId = typeof value.post_id === "string" ? value.post_id : typeof value.postId === "string" ? value.postId : "";
+  const authorId = typeof value.author_id === "string" ? value.author_id : typeof value.authorId === "string" ? value.authorId : "";
+
+  return {
+    post_id: postId,
+    title: typeof value.title === "string" ? value.title : undefined,
+    authorName: typeof value.authorName === "string" ? value.authorName : "Anonymous",
+    author_id: authorId,
+    content: typeof value.content === "string" ? value.content : "",
+    tags: Array.isArray(value.tags) ? value.tags.filter((tag): tag is string => typeof tag === "string") : [],
+    createdAt: typeof value.createdAt === "string" ? value.createdAt : new Date().toISOString(),
+    likes: typeof value.likes === "number" ? value.likes : 0,
+    comments: typeof value.comments === "number" ? value.comments : 0,
+    shares: typeof value.shares === "number" ? value.shares : 0,
+  };
+}
+
+function toSymptomModel(value: unknown): Symptom | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    id: typeof value.id === "string" ? value.id : "",
+    name: typeof value.name === "string"
+      ? value.name
+      : typeof value.symptomName === "string"
+        ? value.symptomName
+        : "",
+    severity: typeof value.severity === "number" ? value.severity : 0,
+    date: typeof value.date === "string"
+      ? value.date
+      : typeof value.createdAt === "string"
+        ? value.createdAt
+        : new Date().toISOString(),
+  };
+}
+
+function toAppointmentModel(value: unknown): Appointment | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const rawType = typeof value.type === "string"
+    ? value.type
+    : typeof value.appointmentType === "string"
+      ? value.appointmentType
+      : "in-person";
+
+  return {
+    id: typeof value.id === "string" ? value.id : "",
+    user_id: typeof value.user_id === "string"
+      ? value.user_id
+      : typeof value.userId === "string"
+        ? value.userId
+        : "",
+    doctor: typeof value.doctor === "string"
+      ? value.doctor
+      : typeof value.doctorName === "string"
+        ? value.doctorName
+        : "",
+    specialty: typeof value.specialty === "string" ? value.specialty : "",
+    date: typeof value.date === "string" ? value.date : "",
+    time: typeof value.time === "string" ? value.time : "",
+    type: rawType === "teleconsultation" ? "teleconsultation" : "in-person",
+  };
+}
+
 function toMessage(value: unknown): string | null {
   if (typeof value === "string" && value.trim()) {
     return value;
@@ -193,15 +266,31 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 export async function getPosts() {
   const response = await request<unknown>(`${API_PREFIX}/posts`);
-  return extractArrayFromPayload<Post>(response, ["posts"]);
+  return extractArrayFromPayload<unknown>(response, ["posts"])
+    .map((item) => toPostModel(item))
+    .filter((item): item is Post => Boolean(item));
 }
 
-export type CreatePostPayload = Omit<Post, "post_id"> & { post_id?: never };
+export type CreatePostPayload = {
+  title: string;
+  content: string;
+  tags: string[];
+  post_id?: never;
+};
 
 export async function createPost(payload: CreatePostPayload) {
+  const body = { ...(payload as CreatePostPayload & { post_id?: unknown }) };
+  delete body.post_id;
+
+  const backendPayload = {
+    title: body.title,
+    content: body.content,
+    tags: body.tags,
+  };
+
   return request<Post>(`${API_PREFIX}/posts`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(backendPayload),
   });
 }
 
@@ -257,29 +346,62 @@ export async function getCurrentUser() {
 
 export async function getSymptoms() {
   const response = await request<unknown>(`${API_PREFIX}/symptoms`);
-  return extractArrayFromPayload<Symptom>(response, ["symptoms"]);
+  return extractArrayFromPayload<unknown>(response, ["symptoms"])
+    .map((item) => toSymptomModel(item))
+    .filter((item): item is Symptom => Boolean(item));
 }
 
-export type CreateSymptomPayload = Omit<Symptom, "id" | "date"> & { date?: string; id?: never };
+export type CreateSymptomPayload = {
+  name: string;
+  severity: number;
+  notes?: string;
+  id?: never;
+};
 
 export async function createSymptom(payload: CreateSymptomPayload) {
+  const body = { ...(payload as CreateSymptomPayload & { id?: unknown }) };
+  delete body.id;
+
+  const backendPayload = {
+    symptomName: body.name,
+    severity: body.severity,
+    notes: body.notes,
+  };
+
   return request<Symptom>(`${API_PREFIX}/symptoms`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(backendPayload),
   });
 }
 
 export async function getAppointments() {
   const response = await request<unknown>(`${API_PREFIX}/appointments`);
-  return extractArrayFromPayload<Appointment>(response, ["appointments"]);
+  return extractArrayFromPayload<unknown>(response, ["appointments"])
+    .map((item) => toAppointmentModel(item))
+    .filter((item): item is Appointment => Boolean(item));
 }
 
-export type CreateAppointmentPayload = Omit<Appointment, "id"> & { id?: never };
+export type CreateAppointmentPayload = Omit<Appointment, "id" | "user_id"> & {
+  id?: never;
+  user_id?: never;
+};
 
 export async function createAppointment(payload: CreateAppointmentPayload) {
+  const body = { ...(payload as CreateAppointmentPayload & { id?: unknown; user_id?: unknown }) };
+  delete body.id;
+  delete body.user_id;
+
+  const backendPayload = {
+    doctor: body.doctor,
+    specialty: body.specialty,
+    date: body.date,
+    time: body.time,
+    type: body.type,
+  };
+
   return request<Appointment>(`${API_PREFIX}/appointments`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(backendPayload),
   });
 }
 
