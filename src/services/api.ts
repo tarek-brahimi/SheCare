@@ -1,4 +1,5 @@
 import type { Appointment, Post, Resource, Stat, Symptom, User } from "@/types/domain";
+import { A } from "vitest/dist/chunks/environment.d.cL3nLXbE.js";
 
 const RAW_API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim();
 const API_PREFIX = "/api/v1";
@@ -126,7 +127,17 @@ export async function getPosts() {
   return request<Post[]>(`${API_PREFIX}/posts`);
 }
 
-export async function createPost(payload: Post) {
+export async function createPost(payload: {
+  title?: string;
+  authorName: string;
+  author_id: string;
+  content: string;
+  tags: string[];
+  createdAt: string;
+  likes: number;
+  comments: number;
+  shares: number;
+}) {
   return request<Post>(`${API_PREFIX}/posts`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -198,6 +209,7 @@ export async function getAppointments() {
 }
 
 export async function createAppointment(payload: {
+  user_id: string;
   doctor: string;
   specialty: string;
   date: string;
