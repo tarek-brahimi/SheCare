@@ -61,7 +61,7 @@ export function CreatePostCard() {
         id: crypto.randomUUID(),
         title: trimmedTitle,
         authorName: user?.name || "Anonymous",
-        authorAvatar: user?.avatar || (user?.name?.charAt(0).toUpperCase() || "A"),
+        
         content: trimmedContent,
         tags: selectedTags,
         createdAt: new Date().toISOString(),
