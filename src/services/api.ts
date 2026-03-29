@@ -153,7 +153,25 @@ export async function commentOnPost(postId: string, comment: string) {
 }
 
 export async function getResources() {
-  return request<Resource[]>(`${API_PREFIX}/resources`);
+  const response = await request<unknown>(`${API_PREFIX}/resources`);
+
+  if (Array.isArray(response)) {
+    return response as Resource[];
+  }
+
+  if (isRecord(response)) {
+    const resources = response.resources;
+    if (Array.isArray(resources)) {
+      return resources as Resource[];
+    }
+
+    const data = response.data;
+    if (Array.isArray(data)) {
+      return data as Resource[];
+    }
+  }
+
+  return [];
 }
 
 export async function getUserStats() {
